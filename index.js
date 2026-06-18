@@ -12,17 +12,35 @@ const hardcodedListings = [
   { id: 3, name: "Stock C", price: 300.00 }
 ];
 
-await client.connect();
-const db = client.db('demowebsite');
-const listingsCollection = db.collection('listings');
+let listingsCollection = null;
 
 fastify.get('/listings', async (request, reply) => {
+  if (!listingsCollection) {
+    console.log('Using hardcoded fallback - no DB connection');
+    return hardcodedListings;
+  }
   const listings = await listingsCollection.find({}).toArray();
+  console.log(`Fetched ${listings.length} listings from MongoDB`);
   if (listings.length === 0) return hardcodedListings;
   return listings;
 });
 
-fastify.listen({ port: 3000, host: '0.0.0.0' }, (err, address) => {
-  if (err) throw err;
-  console.log(`Server listening at ${address}`);
-});
+const start = async () => {
+  try {
+    await client.connect();
+    const db = client.db('demowebsite');
+    listingsCollection = db.collection('listings');
+    console.log('MongoDB connected successfully');
+  } catch (err) {
+    console.error('MongoDB connection failed:', err.message);
+  }
+
+  try {
+    await fastify.listen({ port: 3000, host: '0.0.0.0' });
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+};
+
+start();
