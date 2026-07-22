@@ -31,7 +31,7 @@ const hardcodedListings = [
 ];
 
 let listingsCollection = null;
-
+let contactCollection = null;
 
 fastify.get('/listings', async (request, reply) => {
   if (!listingsCollection) {
@@ -116,11 +116,44 @@ fastify.delete('/listings/:id', async (request, reply) => {
   return { message: 'Listing deleted successfully' };
 });
 
+fastify.post('/contact', async (request, reply) => {
+  const { name, email, message } = request.body || {};
+  if (!name || !email || !message) {
+    reply.status(400).send({ error: 'Name, email, and message are required' });
+    return;
+  }
+
+  const doc = { name, email, message, createdAt: new Date() };
+  const result = await contactCollection.insertOne(doc);
+  return reply.code(201).send({ _id: result.insertedId, ...doc });
+});
+
+fastify.get('/admin/contact', async (request, reply) => {
+  const submissions = await contactCollection.find({}).sort({ createdAt: -1 }).toArray();
+  return submissions;
+});
+
+fastify.delete('/admin/contact/:id', async (request, reply) => {
+  const id = toObjectId(request.params.id);
+  if (!id) {
+    reply.status(400).send({ error: 'Invalid ID format' });
+    return;
+  }
+
+  const result = await contactCollection.deleteOne({ _id: id });
+  if (result.deletedCount === 0) {
+    reply.status(404).send({ error: 'Submission not found' });
+    return;
+  }
+  return { message: 'Submission deleted successfully' };
+});
+
 const start = async () => {
   try {
     await client.connect();
     const db = client.db('demowebsite');
     listingsCollection = db.collection('listings');
+    contactCollection = db.collection('contacts');
     console.log('MongoDB connected successfully');
   } catch (err) {
     console.error('MongoDB connection failed:', err.message);
