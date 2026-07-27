@@ -1,16 +1,24 @@
 import Fastify from 'fastify';
 import { MongoClient, ObjectId } from 'mongodb';
+import cookie from 'cookie';
+import bcrypt from 'bcrypt';
+import crpyto from 'crypto';
 
 const fastify = Fastify({ logger: true });
+
+await fasttify.register(cookie);
 
 const MONGO_URL = process.env.MONGO_URL || 'mongodb://mongo:27017';
 const client = new MongoClient(MONGO_URL);
 
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://anasabdurrahman.com';
+
 fastify.addHook('onRequest', async (request, reply) => {
   console.log(`Incoming request: ${request.method} ${request.url}`);
-  reply.header('Access-Control-Allow-Origin', '*');
+  reply.header('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   reply.header('Access-Control-Allow-Headers', 'Content-Type');
+  reply.header('Access-Control-Allow-Credentials', 'true');
   if (request.method === 'OPTIONS') {
     reply.status(204).send();
   }
