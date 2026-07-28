@@ -1,12 +1,12 @@
 import Fastify from 'fastify';
 import { MongoClient, ObjectId } from 'mongodb';
-import cookie from 'cookie';
+import cookie from '@fastify/cookie';
 import bcrypt from 'bcrypt';
-import crpyto from 'crypto';
+import crypto from 'crypto';
 
 const fastify = Fastify({ logger: true });
 
-await fasttify.register(cookie);
+await fastify.register(cookie);
 
 const MONGO_URL = process.env.MONGO_URL || 'mongodb://mongo:27017';
 const client = new MongoClient(MONGO_URL);
@@ -31,15 +31,102 @@ function toObjectId(id) {
     console.error(`Invalid ObjectId: ${id}`);
     return null;
   } 
-}
+};
+
 const hardcodedListings = [
   { id: 1, name: "Stock A", price: 120.50 },
   { id: 2, name: "Stock B", price: 75.25 },
   { id: 3, name: "Stock C", price: 300.00 }
 ];
 
+const session_Duration = 1000 * 60 * 60 * 24; // 1 day in milliseconds
+
+async function getSessionUser(request) {
+  const sessionId = request.cookies.sessionId;
+  if (!sessionId) return null;
+  
+  const session = await sessionCollection.findOne({ _id: sessionId });
+  if (!session) return null;
+
+  if (session.expiresAt < new Date()) {
+    await sessionCollection.deleteOne({ _id: sessionId });
+    return null;
+  }
+  
+  const user = await usersCollection.findOne({ _id: session.userId });
+  return user || null;
+};
+
+async function requireAuth(request, reply) {
+  const user = await getSessionUser(request);
+  if (!user) {
+    reply.status(401).send({ error: 'Unauthorized' });
+    return null;
+  }
+  request.user = user;
+};
+
 let listingsCollection = null;
 let contactCollection = null;
+let usersCollection = null;
+let sessionCollection = null;
+
+fastify.post('/auth/login', async (request, reply) => {
+  const { username, password } = request.body || {};
+  if (!username || !password) {
+    reply.status(400).send({ error: 'Username and password are required' });
+    return;
+  }
+
+  const user = await usersCollection.findOne({ username });
+  if (!user) {
+    reply.status(401).send({ error: 'Invalid username or password' });
+    return;
+  }
+
+  const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+  if (!passwordMatches) {
+    reply.status(401).send({ error: 'Invalid username or password' });
+    return;
+  }
+
+  const sessionId = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
+
+  await sessionsCollection.insertOne({
+    _id: sessionId,
+    userId: user._id,
+    expiresAt,
+  });
+
+  reply.setCookie('sessionId', sessionId, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+    path: '/',
+    expires: expiresAt,
+  });
+
+  return { username: user.username };
+});
+
+fastify.post('/auth/logout', async (request, reply) => {
+  const sessionId = request.cookies.sessionId;
+  if (sessionId) {
+    await sessionsCollection.deleteOne({ _id: sessionId });
+  }
+  reply.clearCookie('sessionId', { path: '/' });
+  return { message: 'Logged out' };
+});
+
+fastify.get('/auth/me', async (request, reply) => {
+  const user = await getSessionUser(request);
+  if (!user) {
+    reply.status(401).send({ error: 'Not authenticated' });
+    return;
+  }
+  return { username: user.username };
+});
 
 fastify.get('/listings', async (request, reply) => {
   if (!listingsCollection) {
@@ -162,6 +249,8 @@ const start = async () => {
     const db = client.db('demowebsite');
     listingsCollection = db.collection('listings');
     contactCollection = db.collection('contacts');
+    usersCollection = db.collection('users');
+    sessionCollection = db.collection('sessions');
     console.log('MongoDB connected successfully');
   } catch (err) {
     console.error('MongoDB connection failed:', err.message);
