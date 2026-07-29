@@ -45,11 +45,11 @@ async function getSessionUser(request) {
   const sessionId = request.cookies.sessionId;
   if (!sessionId) return null;
   
-  const session = await sessionCollection.findOne({ _id: sessionId });
+  const session = await sessionsCollection.findOne({ _id: sessionId });
   if (!session) return null;
 
   if (session.expiresAt < new Date()) {
-    await sessionCollection.deleteOne({ _id: sessionId });
+    await sessionsCollection.deleteOne({ _id: sessionId });
     return null;
   }
   
@@ -69,7 +69,7 @@ async function requireAuth(request, reply) {
 let listingsCollection = null;
 let contactCollection = null;
 let usersCollection = null;
-let sessionCollection = null;
+let sessionsCollection = null;
 
 fastify.post('/auth/login', async (request, reply) => {
   const { username, password } = request.body || {};
@@ -91,7 +91,7 @@ fastify.post('/auth/login', async (request, reply) => {
   }
 
   const sessionId = crypto.randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
+  const expiresAt = new Date(Date.now() + session_Duration);
 
   await sessionsCollection.insertOne({
     _id: sessionId,
@@ -153,7 +153,7 @@ fastify.get('/listings/:id', async (request, reply) => {
   return listing;
 });
 
-fastify.post('/listings', async (request, reply) => {
+fastify.post('/listings', {preHandler: requireAuth} , async (request, reply) => {
   const {name, description, price} = request.body || {};
   if (!name || typeof price !== 'number') {
     reply.status(400).send({ error: 'Name and price are required' });
@@ -170,7 +170,7 @@ fastify.post('/listings', async (request, reply) => {
   return reply.code(201).send({_id: result.insertedId, ...doc });
 });
 
-fastify.put('/listings/:id', async (request, reply) => {
+fastify.put('/listings/:id', {preHandler: requireAuth}, async (request, reply) => {
   const id = toObjectId(request.params.id);
   if (!id) {
     reply.status(400).send({ error: 'Invalid ID format' });
@@ -196,7 +196,7 @@ fastify.put('/listings/:id', async (request, reply) => {
   return result;
 });
 
-fastify.delete('/listings/:id', async (request, reply) => {
+fastify.delete('/listings/:id', {preHandler: requireAuth} , async (request, reply) => {
   const id = toObjectId(request.params.id);
   if (!id) {
     reply.status(400).send({ error: 'Invalid ID format' });
@@ -223,12 +223,12 @@ fastify.post('/contact', async (request, reply) => {
   return reply.code(201).send({ _id: result.insertedId, ...doc });
 });
 
-fastify.get('/admin/contact', async (request, reply) => {
+fastify.get('/admin/contact', {preHandler: requireAuth}, async (request, reply) => {
   const submissions = await contactCollection.find({}).sort({ createdAt: -1 }).toArray();
   return submissions;
 });
 
-fastify.delete('/admin/contact/:id', async (request, reply) => {
+fastify.delete('/admin/contact/:id', {preHandler: requireAuth}, async (request, reply) => {
   const id = toObjectId(request.params.id);
   if (!id) {
     reply.status(400).send({ error: 'Invalid ID format' });
@@ -250,7 +250,7 @@ const start = async () => {
     listingsCollection = db.collection('listings');
     contactCollection = db.collection('contacts');
     usersCollection = db.collection('users');
-    sessionCollection = db.collection('sessions');
+    sessionsCollection = db.collection('sessions');
     console.log('MongoDB connected successfully');
   } catch (err) {
     console.error('MongoDB connection failed:', err.message);
