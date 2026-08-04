@@ -128,6 +128,82 @@ fastify.get('/auth/me', async (request, reply) => {
   return { username: user.username };
 });
 
+fastify.get('/admin/users', { preHandler: requireAuth }, async (request, reply) => {
+  const users = await usersCollection.find({}, { projection: { passwordHash: 0 } }).toArray();
+  return users;
+});
+
+fastify.post('/admin/users', { preHandler: requireAuth }, async (request, reply) => {
+  const { username, password } = request.body || {};
+  if (!username || !password) {
+    reply.status(400).send({ error: 'Username and password are required' });
+    return;
+  }
+
+  const existing = await usersCollection.findOne({ username });
+  if (existing) {
+    reply.status(409).send({ error: 'Username already exists' });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const doc = { username, passwordHash, createdAt: new Date() };
+  const result = await usersCollection.insertOne(doc);
+
+  return reply.code(201).send({ _id: result.insertedId, username: doc.username, createdAt: doc.createdAt });
+});
+
+fastify.put('/admin/users/:id', { preHandler: requireAuth }, async (request, reply) => {
+  const id = toObjectId(request.params.id);
+  if (!id) {
+    reply.status(400).send({ error: 'Invalid ID format' });
+    return;
+  }
+
+  const { username, password } = request.body || {};
+  const updateDoc = {};
+  if (username) updateDoc.username = username;
+  if (password) updateDoc.passwordHash = await bcrypt.hash(password, 10);
+
+  if (Object.keys(updateDoc).length === 0) {
+    reply.status(400).send({ error: 'Nothing to update' });
+    return;
+  }
+
+  const result = await usersCollection.findOneAndUpdate(
+    { _id: id },
+    { $set: updateDoc },
+    { returnDocument: 'after', projection: { passwordHash: 0 } }
+  );
+
+  if (!result) {
+    reply.status(404).send({ error: 'User not found' });
+    return;
+  }
+  return result;
+});
+
+fastify.delete('/admin/users/:id', { preHandler: requireAuth }, async (request, reply) => {
+  const id = toObjectId(request.params.id);
+  if (!id) {
+    reply.status(400).send({ error: 'Invalid ID format' });
+    return;
+  }
+
+    const totalUsers = await usersCollection.countDocuments();
+  if (totalUsers <= 1) {
+    reply.status(403).send({ error: 'Cannot delete the last remaining user' });
+    return;
+  }
+  
+  const result = await usersCollection.deleteOne({ _id: id });
+  if (result.deletedCount === 0) {
+    reply.status(404).send({ error: 'User not found' });
+    return;
+  }
+  return { message: 'User deleted successfully' };
+});
+
 fastify.get('/listings', async (request, reply) => {
   if (!listingsCollection) {
     console.log('Using hardcoded fallback - no DB connection');
@@ -257,7 +333,7 @@ const start = async () => {
   }
 
   try {
-    await fastify.listen({ port: 3000, host: '0.0.0.0' });
+    await fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
