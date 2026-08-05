@@ -190,7 +190,7 @@ fastify.delete('/admin/users/:id', { preHandler: requireAuth }, async (request, 
     return;
   }
 
-    const totalUsers = await usersCollection.countDocuments();
+  const totalUsers = await usersCollection.countDocuments();
   if (totalUsers <= 1) {
     reply.status(403).send({ error: 'Cannot delete the last remaining user' });
     return;
