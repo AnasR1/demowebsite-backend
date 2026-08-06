@@ -12,6 +12,7 @@ const MONGO_URL = process.env.MONGO_URL || 'mongodb://mongo:27017';
 const client = new MongoClient(MONGO_URL);
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://anasabdurrahman.com';
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || 'anasabdurrahman.com';
 
 fastify.addHook('onRequest', async (request, reply) => {
   console.log(`Incoming request: ${request.method} ${request.url}`);
@@ -104,7 +105,7 @@ fastify.post('/auth/login', async (request, reply) => {
     secure: true,
     sameSite: 'none',
     path: '/',
-    expires: expiresAt,
+    expires: expiresAt, ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {})
   });
 
   return { username: user.username };
@@ -115,7 +116,7 @@ fastify.post('/auth/logout', async (request, reply) => {
   if (sessionId) {
     await sessionsCollection.deleteOne({ _id: sessionId });
   }
-  reply.clearCookie('sessionId', { path: '/' });
+  reply.clearCookie('sessionId', { path: '/' }, ... (COOKIE_DOMAIN ? [{ domain: COOKIE_DOMAIN }] : []));
   return { message: 'Logged out' };
 });
 
