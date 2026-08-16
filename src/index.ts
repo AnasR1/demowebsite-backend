@@ -5,10 +5,25 @@ import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import listingRoutes from './routes/listings.js';
 import contactRoutes from './routes/contact.js';
+import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import path from 'node:path';
 
 const fastify = Fastify({ logger: true });
 
 await fastify.register(cookie);
+
+const uploadDir = path.join(process.cwd(), 'uploads');
+await fastify.register(multipart, {
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB file size limit
+  },
+});
+
+await fastify.register(fastifyStatic, {
+  root: uploadDir,
+  prefix: '/uploads/',
+});
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://anasabdurrahman.com';
 

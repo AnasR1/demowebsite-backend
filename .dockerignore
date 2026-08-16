@@ -1,5 +1,7 @@
 node_modules
+node_modules/
 dist
+dist/
 .git
 .gitignore
 *.log
@@ -7,3 +9,6 @@ cookies.txt
 seed-user.js
 docker-compose.yml
 .env
+uploads/
+uploads/*
+uploads

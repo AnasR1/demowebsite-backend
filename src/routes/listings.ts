@@ -2,6 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { listingsCollection } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { toObjectId } from '../utils/objectId.js';
+import { randomUUID } from 'crypto';
+import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { createWriteStream } from 'node:fs';
 
 const hardcodedListings = [
   { id: 1, name: 'Stock A', price: 120.5 },
@@ -36,28 +40,45 @@ export default async function listingRoutes(fastify: FastifyInstance) {
     return listing;
   });
 
-  fastify.post('/listings', { preHandler: requireAuth }, async (request, reply) => {
-    const { name, description, price } = (request.body || {}) as {
-      name?: string;
-      description?: string;
-      price?: number;
-    };
-    if (!name || typeof price !== 'number') {
+fastify.post('/listings', { preHandler: requireAuth }, async (request, reply) => {
+    const data = await request.file();
+
+    if (!data) {
+      reply.status(400).send({ error: 'No form data received' });
+      return;
+    }
+
+    const name = data.fields.name && 'value' in data.fields.name ? String(data.fields.name.value) : undefined;
+    const description =
+      data.fields.description && 'value' in data.fields.description ? String(data.fields.description.value) : '';
+    const priceRaw =
+      data.fields.price && 'value' in data.fields.price ? String(data.fields.price.value) : undefined;
+    const price = priceRaw !== undefined ? Number(priceRaw) : undefined;
+
+    if (!name || typeof price !== 'number' || Number.isNaN(price)) {
       reply.status(400).send({ error: 'Name and price are required' });
       return;
     }
 
+    let imagePath: string | undefined;
+    if (data.filename) {
+      const ext = path.extname(data.filename);
+      const filename = `${randomUUID()}${ext}`;
+      await pipeline(data.file, createWriteStream(path.join(process.cwd(), 'uploads', filename)));
+      imagePath = `/uploads/${filename}`;
+    }
+
     const doc = {
       name,
-      description: description || '',
+      description,
       price,
+      ...(imagePath ? { image: imagePath } : {}),
       createdAt: new Date(),
     };
-
     const result = await listingsCollection?.insertOne(doc);
     return reply.code(201).send({ _id: result?.insertedId, ...doc });
   });
-
+  
   fastify.put('/listings/:id', { preHandler: requireAuth }, async (request, reply) => {
     const { id: idParam } = request.params as { id: string };
     const id = toObjectId(idParam);
@@ -66,22 +87,37 @@ export default async function listingRoutes(fastify: FastifyInstance) {
       return;
     }
 
-    const { name, description, price } = (request.body || {}) as {
-      name?: string;
-      description?: string;
-      price?: number;
-    };
-    const updateDoc: { name?: string; description?: string; price?: number } = {};
+    const data = await request.file();
+
+    if (!data) {
+      reply.status(400).send({ error: 'No form data received' });
+      return;
+    }
+
+    const name = data.fields.name && 'value' in data.fields.name ? String(data.fields.name.value) : undefined;
+    const description =
+      data.fields.description && 'value' in data.fields.description ? String(data.fields.description.value) : undefined;
+    const priceRaw =
+      data.fields.price && 'value' in data.fields.price ? String(data.fields.price.value) : undefined;
+    const price = priceRaw !== undefined ? Number(priceRaw) : undefined;
+
+    const updateDoc: { name?: string; description?: string; price?: number; image?: string } = {};
     if (name) updateDoc.name = name;
     if (description) updateDoc.description = description;
-    if (typeof price === 'number') updateDoc.price = price;
+    if (typeof price === 'number' && !Number.isNaN(price)) updateDoc.price = price;
+
+    if (data.filename) {
+      const ext = path.extname(data.filename);
+      const filename = `${randomUUID()}${ext}`;
+      await pipeline(data.file, createWriteStream(path.join(process.cwd(), 'uploads', filename)));
+      updateDoc.image = `/uploads/${filename}`;
+    }
 
     const result = await listingsCollection?.findOneAndUpdate(
       { _id: id },
       { $set: updateDoc },
       { returnDocument: 'after' }
     );
-
     if (!result) {
       reply.status(404).send({ error: 'Listing not found' });
       return;
