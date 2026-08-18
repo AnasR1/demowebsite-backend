@@ -40,32 +40,33 @@ export default async function listingRoutes(fastify: FastifyInstance) {
     return listing;
   });
 
-fastify.post('/listings', { preHandler: requireAuth }, async (request, reply) => {
-    const data = await request.file();
+    fastify.post('/listings', { preHandler: requireAuth }, async (request, reply) => {
+    let name: string | undefined;
+    let description = '';
+    let priceRaw: string | undefined;
+    let imagePath: string | undefined;
 
-    if (!data) {
-      reply.status(400).send({ error: 'No form data received' });
-      return;
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        if (part.filename) {
+          const ext = path.extname(part.filename);
+          const filename = `${randomUUID()}${ext}`;
+          await pipeline(part.file, createWriteStream(path.join(process.cwd(), 'uploads', filename)));
+          imagePath = `/uploads/${filename}`;
+        } else {
+          part.file.resume();
+        }
+      } else {
+        if (part.fieldname === 'name') name = String(part.value);
+        if (part.fieldname === 'description') description = String(part.value);
+        if (part.fieldname === 'price') priceRaw = String(part.value);
+      }
     }
 
-    const name = data.fields.name && 'value' in data.fields.name ? String(data.fields.name.value) : undefined;
-    const description =
-      data.fields.description && 'value' in data.fields.description ? String(data.fields.description.value) : '';
-    const priceRaw =
-      data.fields.price && 'value' in data.fields.price ? String(data.fields.price.value) : undefined;
     const price = priceRaw !== undefined ? Number(priceRaw) : undefined;
-
     if (!name || typeof price !== 'number' || Number.isNaN(price)) {
       reply.status(400).send({ error: 'Name and price are required' });
       return;
-    }
-
-    let imagePath: string | undefined;
-    if (data.filename) {
-      const ext = path.extname(data.filename);
-      const filename = `${randomUUID()}${ext}`;
-      await pipeline(data.file, createWriteStream(path.join(process.cwd(), 'uploads', filename)));
-      imagePath = `/uploads/${filename}`;
     }
 
     const doc = {
@@ -87,31 +88,34 @@ fastify.post('/listings', { preHandler: requireAuth }, async (request, reply) =>
       return;
     }
 
-    const data = await request.file();
+    let name: string | undefined;
+    let description: string | undefined;
+    let priceRaw: string | undefined;
+    let imagePath: string | undefined;
 
-    if (!data) {
-      reply.status(400).send({ error: 'No form data received' });
-      return;
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        if (part.filename) {
+          const ext = path.extname(part.filename);
+          const filename = `${randomUUID()}${ext}`;
+          await pipeline(part.file, createWriteStream(path.join(process.cwd(), 'uploads', filename)));
+          imagePath = `/uploads/${filename}`;
+        } else {
+          part.file.resume();
+        }
+      } else {
+        if (part.fieldname === 'name') name = String(part.value);
+        if (part.fieldname === 'description') description = String(part.value);
+        if (part.fieldname === 'price') priceRaw = String(part.value);
+      }
     }
 
-    const name = data.fields.name && 'value' in data.fields.name ? String(data.fields.name.value) : undefined;
-    const description =
-      data.fields.description && 'value' in data.fields.description ? String(data.fields.description.value) : undefined;
-    const priceRaw =
-      data.fields.price && 'value' in data.fields.price ? String(data.fields.price.value) : undefined;
     const price = priceRaw !== undefined ? Number(priceRaw) : undefined;
-
     const updateDoc: { name?: string; description?: string; price?: number; image?: string } = {};
     if (name) updateDoc.name = name;
     if (description) updateDoc.description = description;
     if (typeof price === 'number' && !Number.isNaN(price)) updateDoc.price = price;
-
-    if (data.filename) {
-      const ext = path.extname(data.filename);
-      const filename = `${randomUUID()}${ext}`;
-      await pipeline(data.file, createWriteStream(path.join(process.cwd(), 'uploads', filename)));
-      updateDoc.image = `/uploads/${filename}`;
-    }
+    if (imagePath) updateDoc.image = imagePath;
 
     const result = await listingsCollection?.findOneAndUpdate(
       { _id: id },

@@ -5,7 +5,8 @@ import bcrypt from 'bcrypt';
 import { usersCollection, sessionsCollection } from '../db.js';
 import { getSessionUser } from '../middleware/auth.js';
 
-const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || 'anasabdurrahman.com';
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN;
+const IS_PROD = 'production' === process.env.NODE_ENV;
 const session_Duration = 1000 * 60 * 60 * 24; // 1 day in milliseconds
 
 export default async function authRoutes(fastify: FastifyInstance) {
@@ -39,8 +40,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     reply.setCookie('sessionId', sessionId, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      secure: IS_PROD,
+      sameSite: IS_PROD ? 'none' : 'lax',
       path: '/',
       expires: expiresAt,
       ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
